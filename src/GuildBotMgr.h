@@ -66,6 +66,9 @@ private:
     // Queue all online guild bots for staggered logout.
     void EnsureGuildBotsOffline(uint32 guildId);
 
+    // Log in one bot from the pending-login deque.
+    void ProcessStaggeredLogin();
+
     // Log out one bot from the pending-logout deque.
     void ProcessStaggeredLogout();
 
@@ -83,6 +86,9 @@ private:
 
     // Char GUID lows for all bots we have logged in via this module.
     std::unordered_set<uint32> _managedBots;
+
+    // Stagger login queue: one bot per tick.
+    std::deque<ObjectGuid> _pendingLogins;
 
     // Stagger logout queue: one bot per tick.
     std::deque<ObjectGuid> _pendingLogouts;

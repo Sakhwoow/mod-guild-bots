@@ -45,7 +45,8 @@ void GuildBotMgr::Update(uint32 diff)
     if (!enabled || !minOnline)
         return;
 
-    // One staggered logout per tick.
+    // One staggered login and one logout per tick.
+    ProcessStaggeredLogin();
     ProcessStaggeredLogout();
 
     _checkTimer += diff;
@@ -282,11 +283,13 @@ void GuildBotMgr::EnsureGuildBotsOnline(uint32 guildId, uint32 currentOnline)
             continue;  // already online
 
         _managedBots.insert(charGuid);
-        // NOTE: AddPlayerBot without inserting into currentBots keeps guild bots
-        // outside the MaxRandomBots cap tracked by RandomPlayerbotMgr.
-        sRandomPlayerbotMgr.AddPlayerBot(botGUID, 0);
 
-        LOG_DEBUG("playerbots", "mod-guild-bots: logging in bot {} for guild {}.", charGuid, guildId);
+        // Skip if already queued for login.
+        if (std::find(_pendingLogins.begin(), _pendingLogins.end(), botGUID) != _pendingLogins.end())
+            continue;
+
+        _pendingLogins.push_back(botGUID);
+        LOG_DEBUG("playerbots", "mod-guild-bots: queued bot {} for login (guild {}).", charGuid, guildId);
         --toLogin;
 
     } while (result->NextRow());
@@ -320,6 +323,26 @@ void GuildBotMgr::EnsureGuildBotsOffline(uint32 guildId)
 
         _pendingLogouts.push_back(guid);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Stagger: one login per world tick.
+// ---------------------------------------------------------------------------
+
+void GuildBotMgr::ProcessStaggeredLogin()
+{
+    if (_pendingLogins.empty())
+        return;
+
+    ObjectGuid guid = _pendingLogins.front();
+    _pendingLogins.pop_front();
+
+    // If bot was already logged in by something else, skip.
+    if (sRandomPlayerbotMgr.GetPlayerBot(guid))
+        return;
+
+    LOG_DEBUG("playerbots", "mod-guild-bots: logging in bot {}.", guid.GetCounter());
+    sRandomPlayerbotMgr.AddPlayerBot(guid, 0);
 }
 
 // ---------------------------------------------------------------------------
