@@ -134,7 +134,11 @@ void GuildBotMgr::CheckInstanceEvictions()
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             {
                 Player* member = ref->GetSource();
-                if (member && !GET_PLAYERBOT_AI(member) && member->GetMap() == map)
+                if (!member || member->GetMap() != map)
+                    continue;
+                // Treat as real player if their account is not a bot account
+                // (covers selfbot: has PlayerbotAI but is a real player's account).
+                if (!sRandomPlayerbotMgr.IsRndBotAccount(member->GetSession()->GetAccountId()))
                 {
                     realPlayerPresent = true;
                     break;
@@ -394,10 +398,15 @@ uint32 GuildBotMgr::GetOnlineCount(uint32 guildId) const
 
 bool GuildBotMgr::HasRealPlayerInGuild(uint32 guildId) const
 {
-    for (Player* player : sRandomPlayerbotMgr.GetPlayers())
-        if (player && player->IsInWorld() && player->GetGuildId() == guildId)
-            return true;
-    return false;
+    // Use ObjectAccessor to find all online players including selfbots.
+    bool found = false;
+    ObjectAccessor::DoForAllPlayers([&](Player* player)
+    {
+        if (!found && player && player->IsInWorld() && player->GetGuildId() == guildId
+            && !sRandomPlayerbotMgr.IsRndBotAccount(player->GetSession()->GetAccountId()))
+            found = true;
+    });
+    return found;
 }
 
 uint32 GuildBotMgr::GetBotCountInGuild(uint32 guildId) const
