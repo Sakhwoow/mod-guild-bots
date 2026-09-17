@@ -241,6 +241,19 @@ void GuildBotMgr::EnsureGuildBotsOnline(uint32 guildId, uint32 currentOnline)
 
     uint32 toLogin = minOnline - currentOnline;
 
+    // Pre-fetch all bot account IDs (type 1 = random, type 3 = guild-bot) so we
+    // don't rely on the in-memory rndBotTypeAccounts list which only holds type=1.
+    QueryResult botTypeResult = PlayerbotsDatabase.Query(
+        "SELECT account_id FROM playerbots_account_type WHERE account_type IN (1, 3)");
+    std::unordered_set<uint32> botAccountIds;
+    if (botTypeResult)
+    {
+        do
+        {
+            botAccountIds.insert((*botTypeResult)[0].Get<uint32>());
+        } while (botTypeResult->NextRow());
+    }
+
     QueryResult result = CharacterDatabase.Query(
         "SELECT gm.guid, c.account FROM guild_member gm "
         "INNER JOIN characters c ON c.guid = gm.guid "
@@ -257,7 +270,7 @@ void GuildBotMgr::EnsureGuildBotsOnline(uint32 guildId, uint32 currentOnline)
         uint32 charGuid  = (*result)[0].Get<uint32>();
         uint32 accountId = (*result)[1].Get<uint32>();
 
-        if (!sRandomPlayerbotMgr.IsRndBotAccount(accountId))
+        if (!botAccountIds.count(accountId))
             continue;
 
         ObjectGuid botGUID = ObjectGuid::Create<HighGuid::Player>(charGuid);
