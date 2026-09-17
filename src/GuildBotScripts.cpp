@@ -6,7 +6,7 @@
 #include "GuildBotMgr.h"
 #include "Guild.h"
 #include "Player.h"
-#include "PlayerbotAI.h"
+#include "Playerbots.h"
 #include "PlayerbotAIConfig.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
