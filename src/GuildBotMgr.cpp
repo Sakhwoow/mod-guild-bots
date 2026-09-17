@@ -398,15 +398,15 @@ uint32 GuildBotMgr::GetOnlineCount(uint32 guildId) const
 
 bool GuildBotMgr::HasRealPlayerInGuild(uint32 guildId) const
 {
-    // Use ObjectAccessor to find all online players including selfbots.
-    bool found = false;
-    ObjectAccessor::DoForAllPlayers([&](Player* player)
+    // Iterate all online players including selfbots (who have PlayerbotAI but
+    // are not bot accounts).
+    for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
     {
-        if (!found && player && player->IsInWorld() && player->GetGuildId() == guildId
+        if (player && player->IsInWorld() && player->GetGuildId() == guildId
             && !sRandomPlayerbotMgr.IsRndBotAccount(player->GetSession()->GetAccountId()))
-            found = true;
-    });
-    return found;
+            return true;
+    }
+    return false;
 }
 
 uint32 GuildBotMgr::GetBotCountInGuild(uint32 guildId) const
