@@ -40,6 +40,8 @@ public:
     void MarkAsGuildBotAccount(uint32 accountId);
     // Restore a bot account to random type (1) when it leaves all real guilds.
     void UnmarkAsGuildBotAccount(uint32 accountId);
+    // On startup: retroactively mark all existing guild-bot accounts as type 3.
+    void MarkExistingGuildBotAccounts();
 
     // Count of rndbot accounts currently in the guild (online + offline).
     uint32 GetBotCountInGuild(uint32 guildId) const;

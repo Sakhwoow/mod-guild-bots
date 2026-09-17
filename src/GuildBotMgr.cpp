@@ -25,24 +25,10 @@ void GuildBotMgr::Initialize(bool /*reload*/)
     minOnline     = sConfigMgr->GetOption<uint32>("GuildBot.MinOnline", 40);
     maxBotsInGuild = sConfigMgr->GetOption<uint32>("GuildBot.MaxBotsInGuild", 40);
 
-    // Always mark guild-bot accounts as type 3 so they are excluded from
-    // the random bot pool (mod-playerbots only loads account_type = 1).
-    // This ensures bots in real guilds never enter the world without this module.
-    PlayerbotsDatabase.Execute(
-        "UPDATE playerbots_account_type pat "
-        "INNER JOIN characters c ON c.account = pat.account_id "
-        "INNER JOIN guild_member gm ON gm.guid = c.guid "
-        "SET pat.account_type = 3 "
-        "WHERE pat.account_type = 1 "
-        "AND EXISTS ("
-        "  SELECT 1 FROM guild_member gm2 "
-        "  INNER JOIN characters c2 ON c2.guid = gm2.guid "
-        "  WHERE gm2.guildid = gm.guildid "
-        "  AND c2.account NOT IN (SELECT account_id FROM playerbots_account_type)"
-        ")");
-
     if (!enabled)
         return;
+
+    MarkExistingGuildBotAccounts();
 
     LOG_INFO("server.loading", "mod-guild-bots: initialized (Enable={}, MinOnline={}, MaxBotsInGuild={}).",
         enabled, minOnline, maxBotsInGuild);
@@ -395,6 +381,60 @@ uint32 GuildBotMgr::GetBotCountInGuild(uint32 guildId) const
     } while (result->NextRow());
 
     return count;
+}
+
+void GuildBotMgr::MarkExistingGuildBotAccounts()
+{
+    // Step 1: get all type=1 bot account IDs from playerbots DB
+    QueryResult botAccounts = PlayerbotsDatabase.Query(
+        "SELECT account_id FROM playerbots_account_type WHERE account_type = 1");
+    if (!botAccounts)
+        return;
+
+    std::string botIds;
+    do
+    {
+        if (!botIds.empty())
+            botIds += ',';
+        botIds += std::to_string((*botAccounts)[0].Get<uint32>());
+    } while (botAccounts->NextRow());
+
+    if (botIds.empty())
+        return;
+
+    // Step 2: from CharacterDB find which of those are in real guilds
+    // (guild has at least one member whose account is NOT in botIds)
+    QueryResult guildBots = CharacterDatabase.Query(
+        "SELECT DISTINCT c.account FROM guild_member gm "
+        "INNER JOIN characters c ON c.guid = gm.guid "
+        "WHERE c.account IN ({}) "
+        "AND EXISTS ("
+        "  SELECT 1 FROM guild_member gm2 "
+        "  INNER JOIN characters c2 ON c2.guid = gm2.guid "
+        "  WHERE gm2.guildid = gm.guildid "
+        "  AND c2.account NOT IN ({})"
+        ")", botIds, botIds);
+
+    if (!guildBots)
+        return;
+
+    std::string toMark;
+    do
+    {
+        if (!toMark.empty())
+            toMark += ',';
+        toMark += std::to_string((*guildBots)[0].Get<uint32>());
+    } while (guildBots->NextRow());
+
+    if (toMark.empty())
+        return;
+
+    // Step 3: mark them as type 3 in playerbots DB
+    PlayerbotsDatabase.Execute(
+        "UPDATE playerbots_account_type SET account_type = 3 "
+        "WHERE account_id IN ({}) AND account_type = 1", toMark);
+
+    LOG_INFO("playerbots", "mod-guild-bots: marked {} account(s) as guild-bot type.", toMark.size());
 }
 
 void GuildBotMgr::MarkAsGuildBotAccount(uint32 accountId)
