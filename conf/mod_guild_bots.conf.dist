@@ -1,0 +1,33 @@
+#
+# This file is part of the mod-guild-bots module for AzerothCore.
+#
+
+[worldserver]
+
+###################################
+# Guild Bots module configuration
+###################################
+
+#    GuildBot.Enable
+#        Description: Enable guild bot management.
+#                     Requires mod-playerbots to be loaded.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+GuildBot.Enable = 1
+
+#    GuildBot.MinOnline
+#        Description: Minimum number of guild member bots to keep online
+#                     per guild while at least one real player from that
+#                     guild is online. 0 = feature disabled.
+#        Default: 40
+#
+GuildBot.MinOnline = 40
+
+#    GuildBot.MaxBotsInGuild
+#        Description: Maximum number of random bots allowed in any single
+#                     real-player guild. Bots will decline guild invites
+#                     once this limit is reached. 0 = unlimited.
+#        Default: 40
+#
+GuildBot.MaxBotsInGuild = 40
