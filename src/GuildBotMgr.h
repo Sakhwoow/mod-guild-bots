@@ -36,6 +36,11 @@ public:
     // True if this char GUID is managed by this module.
     bool IsManagedBot(uint32 charGuidLow) const { return _managedBots.count(charGuidLow) > 0; }
 
+    // Mark a bot account as guild-bot type (3) so it's excluded from the random bot pool.
+    void MarkAsGuildBotAccount(uint32 accountId);
+    // Restore a bot account to random type (1) when it leaves all real guilds.
+    void UnmarkAsGuildBotAccount(uint32 accountId);
+
     // Count of rndbot accounts currently in the guild (online + offline).
     uint32 GetBotCountInGuild(uint32 guildId) const;
 

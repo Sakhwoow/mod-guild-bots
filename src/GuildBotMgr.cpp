@@ -25,6 +25,22 @@ void GuildBotMgr::Initialize(bool /*reload*/)
     minOnline     = sConfigMgr->GetOption<uint32>("GuildBot.MinOnline", 40);
     maxBotsInGuild = sConfigMgr->GetOption<uint32>("GuildBot.MaxBotsInGuild", 40);
 
+    // Always mark guild-bot accounts as type 3 so they are excluded from
+    // the random bot pool (mod-playerbots only loads account_type = 1).
+    // This ensures bots in real guilds never enter the world without this module.
+    PlayerbotsDatabase.Execute(
+        "UPDATE playerbots_account_type pat "
+        "INNER JOIN characters c ON c.account = pat.account_id "
+        "INNER JOIN guild_member gm ON gm.guid = c.guid "
+        "SET pat.account_type = 3 "
+        "WHERE pat.account_type = 1 "
+        "AND EXISTS ("
+        "  SELECT 1 FROM guild_member gm2 "
+        "  INNER JOIN characters c2 ON c2.guid = gm2.guid "
+        "  WHERE gm2.guildid = gm.guildid "
+        "  AND c2.account NOT IN (SELECT account_id FROM playerbots_account_type)"
+        ")");
+
     if (!enabled)
         return;
 
@@ -379,6 +395,35 @@ uint32 GuildBotMgr::GetBotCountInGuild(uint32 guildId) const
     } while (result->NextRow());
 
     return count;
+}
+
+void GuildBotMgr::MarkAsGuildBotAccount(uint32 accountId)
+{
+    PlayerbotsDatabase.Execute(
+        "UPDATE playerbots_account_type SET account_type = 3 "
+        "WHERE account_id = {} AND account_type = 1", accountId);
+}
+
+void GuildBotMgr::UnmarkAsGuildBotAccount(uint32 accountId)
+{
+    // Only restore if the bot has no remaining real guilds.
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT 1 FROM characters c "
+        "INNER JOIN guild_member gm ON gm.guid = c.guid "
+        "WHERE c.account = {} "
+        "AND EXISTS ("
+        "  SELECT 1 FROM guild_member gm2 "
+        "  INNER JOIN characters c2 ON c2.guid = gm2.guid "
+        "  WHERE gm2.guildid = gm.guildid "
+        "  AND c2.account NOT IN (SELECT account_id FROM playerbots_account_type)"
+        ") LIMIT 1", accountId);
+
+    if (!result)
+    {
+        PlayerbotsDatabase.Execute(
+            "UPDATE playerbots_account_type SET account_type = 1 "
+            "WHERE account_id = {} AND account_type = 3", accountId);
+    }
 }
 
 bool GuildBotMgr::IsRealGuild(uint32 guildId) const
