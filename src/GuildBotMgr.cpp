@@ -25,10 +25,12 @@ void GuildBotMgr::Initialize(bool /*reload*/)
     minOnline     = sConfigMgr->GetOption<uint32>("GuildBot.MinOnline", 40);
     maxBotsInGuild = sConfigMgr->GetOption<uint32>("GuildBot.MaxBotsInGuild", 40);
 
+    // Always mark guild-bot accounts even when the module is disabled so they
+    // are never picked up by the random bot pool.
+    MarkExistingGuildBotAccounts();
+
     if (!enabled)
         return;
-
-    MarkExistingGuildBotAccounts();
 
     LOG_INFO("server.loading", "mod-guild-bots: initialized (Enable={}, MinOnline={}, MaxBotsInGuild={}).",
         enabled, minOnline, maxBotsInGuild);
