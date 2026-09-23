@@ -50,9 +50,10 @@ public:
     bool IsRealGuild(uint32 guildId) const;
 
     // Config values — readable from other scripts if needed.
-    uint32 minOnline     = 0;
+    uint32 minOnline      = 0;
     uint32 maxBotsInGuild = 0;
-    bool   enabled       = false;
+    uint32 botsPerInterval = 50;
+    bool   enabled        = false;
 
 private:
     GuildBotMgr() = default;
@@ -100,8 +101,9 @@ private:
     std::unordered_map<uint32, time_t> _lastCheck;
 
     // Accumulator for WorldScript::OnUpdate diff.
-    uint32 _checkTimer   = 0;
-    uint32 _aiDriveTimer = 0;
+    uint32 _checkTimer    = 0;
+    uint32 _aiDriveTimer  = 0;
+    uint32 _aiDriveIndex  = 0; // round-robin offset for DriveOnlineBotsAI
 
     static constexpr uint32 CHECK_INTERVAL_MS    = 30000; // 30 s between periodic checks
     static constexpr uint32 AI_DRIVE_INTERVAL_MS = 15000; // 15 s between ProcessBot calls for guild bots

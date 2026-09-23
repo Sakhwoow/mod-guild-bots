@@ -31,3 +31,13 @@ GuildBot.MinOnline = 40
 #        Default: 40
 #
 GuildBot.MaxBotsInGuild = 40
+
+#    GuildBot.BotsPerInterval
+#        Description: Maximum number of guild bots that receive a ProcessBot
+#                     AI update each 15-second interval. Spread the work the
+#                     same way AiPlayerbot.RandomBotsPerInterval does for the
+#                     random-bot pool. Raise if bots are slow to level/roam;
+#                     lower if you notice lag spikes from the guild-bot cycle.
+#        Default: 50
+#
+GuildBot.BotsPerInterval = 50

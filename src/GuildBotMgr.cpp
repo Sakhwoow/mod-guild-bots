@@ -18,12 +18,14 @@
 
 #include <algorithm>
 #include <ctime>
+#include <vector>
 
 void GuildBotMgr::Initialize(bool /*reload*/)
 {
-    enabled       = sConfigMgr->GetOption<bool>("GuildBot.Enable", true);
-    minOnline     = sConfigMgr->GetOption<uint32>("GuildBot.MinOnline", 40);
-    maxBotsInGuild = sConfigMgr->GetOption<uint32>("GuildBot.MaxBotsInGuild", 40);
+    enabled        = sConfigMgr->GetOption<bool>("GuildBot.Enable", true);
+    minOnline      = sConfigMgr->GetOption<uint32>("GuildBot.MinOnline", 40);
+    maxBotsInGuild  = sConfigMgr->GetOption<uint32>("GuildBot.MaxBotsInGuild", 40);
+    botsPerInterval = sConfigMgr->GetOption<uint32>("GuildBot.BotsPerInterval", 50);
 
     // Always mark guild-bot accounts even when the module is disabled so they
     // are never picked up by the random bot pool.
@@ -74,8 +76,19 @@ void GuildBotMgr::Update(uint32 diff)
 
 void GuildBotMgr::DriveOnlineBotsAI()
 {
-    for (uint32 guidLow : _managedBots)
+    if (_managedBots.empty())
+        return;
+
+    // Snapshot for stable offset-based round-robin; copied once per 15 s call.
+    std::vector<uint32> bots(_managedBots.begin(), _managedBots.end());
+    uint32 total = static_cast<uint32>(bots.size());
+    uint32 limit = std::min(botsPerInterval, total);
+
+    _aiDriveIndex %= total; // clamp in case bots were removed since last call
+
+    for (uint32 i = 0; i < limit; ++i)
     {
+        uint32 guidLow = bots[(_aiDriveIndex + i) % total];
         ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
         Player* bot = ObjectAccessor::FindPlayer(guid);
         if (!bot || !bot->IsInWorld())
@@ -108,6 +121,8 @@ void GuildBotMgr::DriveOnlineBotsAI()
 
         sRandomPlayerbotMgr.ProcessBot(bot);
     }
+
+    _aiDriveIndex = (_aiDriveIndex + limit) % total;
 }
 
 // ---------------------------------------------------------------------------
