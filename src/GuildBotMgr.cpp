@@ -119,6 +119,20 @@ void GuildBotMgr::DriveOnlineBotsAI()
             }
         }
 
+        // If no group, make sure the bot isn't still following a player from a
+        // previous group session.  PlayerbotAI only clears the master for type=1
+        // accounts (IsRndBotAccount), but guild bots are type=3 and would keep
+        // the +follow strategy indefinitely after the player left the group.
+        if (!group)
+        {
+            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+            if (botAI && botAI->GetMaster())
+            {
+                botAI->SetMaster(nullptr);
+                botAI->ResetStrategies();
+            }
+        }
+
         sRandomPlayerbotMgr.ProcessBot(bot);
     }
 
