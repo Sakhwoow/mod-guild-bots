@@ -81,6 +81,31 @@ void GuildBotMgr::DriveOnlineBotsAI()
         if (!bot || !bot->IsInWorld())
             continue;
 
+        // Leave bot-only groups: if every online member is a bot (no real player
+        // and no selfbot present), disband or leave.  ProcessBot(Player*) skips
+        // this for guild bots because IsRandomBot() returns false for type=3.
+        Group* group = bot->GetGroup();
+        if (group && !group->isLFGGroup())
+        {
+            bool hasRealPlayer = false;
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && (!GET_PLAYERBOT_AI(member) || IsSelfBot(member)))
+                {
+                    hasRealPlayer = true;
+                    break;
+                }
+            }
+            if (!hasRealPlayer)
+            {
+                PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+                if (botAI)
+                    botAI->LeaveOrDisbandGroup();
+                continue;
+            }
+        }
+
         sRandomPlayerbotMgr.ProcessBot(bot);
     }
 }
