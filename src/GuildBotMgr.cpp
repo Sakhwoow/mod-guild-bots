@@ -49,6 +49,13 @@ void GuildBotMgr::Update(uint32 diff)
     ProcessStaggeredLogin();
     ProcessStaggeredLogout();
 
+    _aiDriveTimer += diff;
+    if (_aiDriveTimer >= AI_DRIVE_INTERVAL_MS)
+    {
+        _aiDriveTimer = 0;
+        DriveOnlineBotsAI();
+    }
+
     _checkTimer += diff;
     if (_checkTimer < CHECK_INTERVAL_MS)
         return;
@@ -56,6 +63,26 @@ void GuildBotMgr::Update(uint32 diff)
 
     PeriodicCheck();
     CheckInstanceEvictions();
+}
+
+// ---------------------------------------------------------------------------
+// Drive AI for online managed bots so they level, quest, and roam when idle.
+// ProcessBot(Player*) handles randomization, teleportation, and strategy — it
+// is normally only called for type=1 (random pool) accounts.  Guild bots are
+// type=3, excluded from rndBotTypeAccounts, so we drive them here instead.
+// ---------------------------------------------------------------------------
+
+void GuildBotMgr::DriveOnlineBotsAI()
+{
+    for (uint32 guidLow : _managedBots)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
+        Player* bot = ObjectAccessor::FindPlayer(guid);
+        if (!bot || !bot->IsInWorld())
+            continue;
+
+        sRandomPlayerbotMgr.ProcessBot(bot);
+    }
 }
 
 // ---------------------------------------------------------------------------
