@@ -578,7 +578,7 @@ void GuildBotMgr::MarkAsGuildBotAccount(uint32 accountId)
         "WHERE account_id = {} AND account_type = 1", accountId);
 }
 
-void GuildBotMgr::UnmarkAsGuildBotAccount(uint32 accountId)
+bool GuildBotMgr::UnmarkAsGuildBotAccount(uint32 accountId)
 {
     // Only restore if the bot has no remaining real guilds.
     QueryResult result = CharacterDatabase.Query(
@@ -597,7 +597,9 @@ void GuildBotMgr::UnmarkAsGuildBotAccount(uint32 accountId)
         PlayerbotsDatabase.Execute(
             "UPDATE playerbots_account_type SET account_type = 1 "
             "WHERE account_id = {} AND account_type = 3", accountId);
+        return true;
     }
+    return false;
 }
 
 void GuildBotMgr::EvictBotsForAccount(uint32 accountId)

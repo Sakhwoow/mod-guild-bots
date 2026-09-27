@@ -39,7 +39,8 @@ public:
     // Mark a bot account as guild-bot type (3) so it's excluded from the random bot pool.
     void MarkAsGuildBotAccount(uint32 accountId);
     // Restore a bot account to random type (1) when it leaves all real guilds.
-    void UnmarkAsGuildBotAccount(uint32 accountId);
+    // Returns true if the account was actually downgraded (no real guilds remain).
+    bool UnmarkAsGuildBotAccount(uint32 accountId);
     // Remove all managed bots belonging to this account and log them out so they
     // rejoin the random bot pool on next login.
     void EvictBotsForAccount(uint32 accountId);

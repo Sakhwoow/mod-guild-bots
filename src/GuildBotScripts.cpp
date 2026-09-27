@@ -105,10 +105,9 @@ public:
         if (!sRandomPlayerbotMgr.IsRndBotAccount(accountId))
             return;
 
-        // Restore to random pool if bot is no longer in any real guild.
-        sGuildBotMgr.UnmarkAsGuildBotAccount(accountId);
-        // Remove from managed set and logout so the bot re-enters the random pool.
-        sGuildBotMgr.EvictBotsForAccount(accountId);
+        // Restore to random pool only if the bot has no remaining real guilds.
+        if (sGuildBotMgr.UnmarkAsGuildBotAccount(accountId))
+            sGuildBotMgr.EvictBotsForAccount(accountId);
     }
 };
 
