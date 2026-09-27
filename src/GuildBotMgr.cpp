@@ -5,11 +5,11 @@
 
 #include "GuildBotMgr.h"
 
+#include "CharacterCache.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "Log.h"
-#include "Map.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "Playerbots.h"
@@ -51,11 +51,11 @@ void GuildBotMgr::Update(uint32 diff)
     ProcessStaggeredLogin();
     ProcessStaggeredLogout();
 
-    _aiDriveTimer += diff;
-    if (_aiDriveTimer >= AI_DRIVE_INTERVAL_MS)
+    _masterSyncTimer += diff;
+    if (_masterSyncTimer >= MASTER_SYNC_INTERVAL_MS)
     {
-        _aiDriveTimer = 0;
-        DriveOnlineBotsAI();
+        _masterSyncTimer = 0;
+        MasterSync();
     }
 
     _checkTimer += diff;
@@ -64,85 +64,94 @@ void GuildBotMgr::Update(uint32 diff)
     _checkTimer = 0;
 
     PeriodicCheck();
-    CheckInstanceEvictions();
 }
 
 // ---------------------------------------------------------------------------
-// Drive AI for online managed bots so they level, quest, and roam when idle.
-// ProcessBot(Player*) handles randomization, teleportation, and strategy — it
-// is normally only called for type=1 (random pool) accounts.  Guild bots are
-// type=3, excluded from rndBotTypeAccounts, so we drive them here instead.
+// Master sync: set or clear the PlayerbotAI master pointer for each managed
+// bot based on current group membership.  Uses GetMemberSlots (not
+// GroupReference) so a real player in a portal map-transition is not mistaken
+// for "no real player" and does not trigger a premature group leave.
+//
+// AI driving (ProcessBot / randomize / teleport) is now handled by
+// RandomPlayerbotMgr::UpdateAIInternal via the guildBots set; MasterSync only
+// manages the master pointer so packet dispatch (CMSG_AREATRIGGER, etc.) works.
 // ---------------------------------------------------------------------------
 
-void GuildBotMgr::DriveOnlineBotsAI()
+void GuildBotMgr::MasterSync()
 {
     if (_managedBots.empty())
         return;
 
-    // Snapshot for stable offset-based round-robin; copied once per 15 s call.
-    std::vector<uint32> bots(_managedBots.begin(), _managedBots.end());
-    uint32 total = static_cast<uint32>(bots.size());
-    uint32 limit = std::min(botsPerInterval, total);
-
-    _aiDriveIndex %= total; // clamp in case bots were removed since last call
-
-    for (uint32 i = 0; i < limit; ++i)
+    for (uint32 guidLow : _managedBots)
     {
-        uint32 guidLow = bots[(_aiDriveIndex + i) % total];
         ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
         Player* bot = ObjectAccessor::FindPlayer(guid);
         if (!bot || !bot->IsInWorld())
             continue;
 
-        // Leave bot-only groups: if every online member is a bot (no real player
-        // and no selfbot present), disband or leave.  ProcessBot(Player*) skips
-        // this for guild bots because IsRandomBot() returns false for type=3.
-        Group* group = bot->GetGroup();
-        if (group && !group->isLFGGroup())
-        {
-            bool hasRealPlayer = false;
-            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-            {
-                Player* member = ref->GetSource();
-                if (member && (!GET_PLAYERBOT_AI(member) || IsSelfBot(member)))
-                {
-                    hasRealPlayer = true;
-                    break;
-                }
-            }
-            if (!hasRealPlayer)
-            {
-                PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-                if (botAI)
-                {
-                    botAI->LeaveOrDisbandGroup();
-                    botAI->SetMaster(nullptr);
-                    botAI->ResetStrategies();
-                    sRandomPlayerbotMgr.ResetIdleTimers(guidLow);
-                }
-                continue;
-            }
-        }
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+        if (!botAI)
+            continue;
 
-        // If no group, make sure the bot isn't still following a player from a
-        // previous group session.  PlayerbotAI only clears the master for type=1
-        // accounts (IsRndBotAccount), but guild bots are type=3 and would keep
-        // the +follow strategy indefinitely after the player left the group.
-        if (!group)
+        Group* group = bot->GetGroup();
+
+        if (!group || group->isLFGGroup())
         {
-            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-            if (botAI && botAI->GetMaster())
+            if (botAI->GetMaster())
             {
                 botAI->SetMaster(nullptr);
                 botAI->ResetStrategies();
                 sRandomPlayerbotMgr.ResetIdleTimers(guidLow);
             }
+            continue;
         }
 
-        sRandomPlayerbotMgr.ProcessBot(bot);
-    }
+        // Scan group members using GetMemberSlots to cover offline/transitioning players.
+        bool hasRealPlayer = false;
+        Player* newMaster = nullptr;
 
-    _aiDriveIndex = (_aiDriveIndex + limit) % total;
+        for (Group::MemberSlotList::const_iterator i = group->GetMemberSlots().begin();
+             i != group->GetMemberSlots().end(); ++i)
+        {
+            Player* member = ObjectAccessor::FindPlayer(i->guid);
+            if (member)
+            {
+                if (!GET_PLAYERBOT_AI(member) || IsSelfBot(member))
+                {
+                    hasRealPlayer = true;
+                    newMaster = member;
+                    break;
+                }
+            }
+            else
+            {
+                // Member is offline or mid-map-transition.  Check account type:
+                // real players are never in the random-bot account pool.
+                uint32 acctId = sCharacterCache->GetCharacterAccountIdByGuid(i->guid);
+                if (acctId && !sRandomPlayerbotMgr.IsRndBotAccount(acctId))
+                {
+                    // Keep the existing master so any in-flight portal packet
+                    // dispatch is not interrupted.
+                    hasRealPlayer = true;
+                    newMaster = botAI->GetMaster();
+                    break;
+                }
+            }
+        }
+
+        if (hasRealPlayer)
+        {
+            if (newMaster && botAI->GetMaster() != newMaster)
+                botAI->SetMaster(newMaster);
+        }
+        else
+        {
+            botAI->LeaveOrDisbandGroup();
+            botAI->SetMaster(nullptr);
+            botAI->ResetStrategies();
+            sRandomPlayerbotMgr.ResetIdleTimers(guidLow);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -195,67 +204,6 @@ void GuildBotMgr::PeriodicCheck()
 }
 
 // ---------------------------------------------------------------------------
-// Instance eviction: if a managed bot is in a dungeon/raid with no real
-// player on the same map, leave the group and teleport home.
-// ---------------------------------------------------------------------------
-
-void GuildBotMgr::CheckInstanceEvictions()
-{
-    std::vector<ObjectGuid> toEvict;
-
-    for (uint32 guidLow : _managedBots)
-    {
-        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
-        Player* bot = ObjectAccessor::FindPlayer(guid);
-        if (!bot || !bot->IsInWorld())
-            continue;
-
-        Map* map = bot->GetMap();
-        if (!map || (!map->IsDungeon() && !map->IsRaid()))
-            continue;
-
-        bool realPlayerPresent = false;
-        Group* group = bot->GetGroup();
-        if (group)
-        {
-            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
-            {
-                Player* member = ref->GetSource();
-                if (!member || member->GetMap() != map)
-                    continue;
-                // Treat as real player if their account is not a bot account
-                // (covers selfbot: has PlayerbotAI but is a real player's account).
-                if (!sRandomPlayerbotMgr.IsRndBotAccount(member->GetSession()->GetAccountId()))
-                {
-                    realPlayerPresent = true;
-                    break;
-                }
-            }
-        }
-
-        if (!realPlayerPresent)
-            toEvict.push_back(guid);
-    }
-
-    for (ObjectGuid const& guid : toEvict)
-    {
-        Player* bot = ObjectAccessor::FindPlayer(guid);
-        if (!bot || !bot->IsInWorld())
-            continue;
-
-        LOG_DEBUG("playerbots", "mod-guild-bots: evicting bot {} from instance {} (no real player remaining).",
-            bot->GetName(), bot->GetMap() ? bot->GetMap()->GetMapName() : "?");
-
-        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-        if (bot->GetGroup() && botAI)
-            botAI->LeaveOrDisbandGroup();
-
-        bot->TeleportTo(bot->m_homebindMapId, bot->m_homebindX, bot->m_homebindY, bot->m_homebindZ,
-            bot->GetOrientation());
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Real-player login / logout triggers.
 // ---------------------------------------------------------------------------
 
@@ -287,6 +235,10 @@ void GuildBotMgr::OnRealPlayerLogin(Player* player)
     uint32 online = GetOnlineCount(guildId);
     if (online < minOnline)
         EnsureGuildBotsOnline(guildId, online);
+
+    // Sync master immediately so portal/follow dispatch is ready without
+    // waiting for the next 15-second MasterSync tick.
+    MasterSync();
 }
 
 void GuildBotMgr::OnRealPlayerLogout(Player* player)
@@ -434,6 +386,7 @@ void GuildBotMgr::ProcessStaggeredLogin()
 
     LOG_DEBUG("playerbots", "mod-guild-bots: logging in bot {}.", guid.GetCounter());
     sRandomPlayerbotMgr.AddPlayerBot(guid, 0);
+    sRandomPlayerbotMgr.AddGuildBotToAI(guid.GetCounter());
 }
 
 // ---------------------------------------------------------------------------
@@ -448,10 +401,12 @@ void GuildBotMgr::ProcessStaggeredLogout()
     ObjectGuid guid = _pendingLogouts.front();
     _pendingLogouts.pop_front();
 
+    uint32 guidLow = guid.GetCounter();
     Player* bot = ObjectAccessor::FindPlayer(guid);
     if (!bot || !bot->IsInWorld())
     {
-        _managedBots.erase(guid.GetCounter());
+        _managedBots.erase(guidLow);
+        sRandomPlayerbotMgr.RemoveGuildBotFromAI(guidLow);
         return;
     }
 
@@ -459,8 +414,8 @@ void GuildBotMgr::ProcessStaggeredLogout()
     if (HasRealPlayerInGuild(bot->GetGuildId()))
         return;
 
-    uint32 guidLow = guid.GetCounter();
     _managedBots.erase(guidLow);
+    sRandomPlayerbotMgr.RemoveGuildBotFromAI(guidLow);
 
     LOG_DEBUG("playerbots", "mod-guild-bots: stagger-logout for bot {}.", bot->GetName());
     sRandomPlayerbotMgr.LogoutPlayerBot(guid);
@@ -616,6 +571,7 @@ void GuildBotMgr::EvictBotsForAccount(uint32 accountId)
     {
         ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
         _managedBots.erase(guidLow);
+        sRandomPlayerbotMgr.RemoveGuildBotFromAI(guidLow);
         LOG_DEBUG("playerbots", "mod-guild-bots: bot guid={} evicted from managed set (account removed from guild).", guidLow);
         sRandomPlayerbotMgr.LogoutPlayerBot(guid);
     }

@@ -80,11 +80,9 @@ private:
     // Periodic 30-second check: ensure guilds with real players have enough bots.
     void PeriodicCheck();
 
-    // Evict managed bots from instances that no longer contain a real player.
-    void CheckInstanceEvictions();
-
-    // Drive ProcessBot(Player*) for all online managed bots so they level, quest, and roam.
-    void DriveOnlineBotsAI();
+    // Sync master pointer for each managed bot based on current group membership.
+    // Uses GetMemberSlots (not GroupReference) to survive portal map-transitions.
+    void MasterSync();
 
     // Count online managed bots for a specific guild.
     uint32 GetOnlineCount(uint32 guildId) const;
@@ -105,13 +103,12 @@ private:
     std::unordered_map<uint32, time_t> _lastCheck;
 
     // Accumulator for WorldScript::OnUpdate diff.
-    uint32 _checkTimer    = 0;
-    uint32 _aiDriveTimer  = 0;
-    uint32 _aiDriveIndex  = 0; // round-robin offset for DriveOnlineBotsAI
+    uint32 _checkTimer       = 0;
+    uint32 _masterSyncTimer  = 0;
 
-    static constexpr uint32 CHECK_INTERVAL_MS    = 30000; // 30 s between periodic checks
-    static constexpr uint32 AI_DRIVE_INTERVAL_MS = 15000; // 15 s between ProcessBot calls for guild bots
-    static constexpr time_t RATE_LIMIT_SECS   = 300;   // 5 min between DB queries per guild
+    static constexpr uint32 CHECK_INTERVAL_MS       = 30000; // 30 s between periodic checks
+    static constexpr uint32 MASTER_SYNC_INTERVAL_MS = 15000; // 15 s between master sync passes
+    static constexpr time_t RATE_LIMIT_SECS         = 300;   // 5 min between DB queries per guild
 };
 
 #define sGuildBotMgr GuildBotMgr::instance()
