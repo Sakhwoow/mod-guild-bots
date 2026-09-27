@@ -114,7 +114,12 @@ void GuildBotMgr::DriveOnlineBotsAI()
             {
                 PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
                 if (botAI)
+                {
                     botAI->LeaveOrDisbandGroup();
+                    botAI->SetMaster(nullptr);
+                    botAI->ResetStrategies();
+                    sRandomPlayerbotMgr.ResetIdleTimers(guidLow);
+                }
                 continue;
             }
         }
@@ -130,6 +135,7 @@ void GuildBotMgr::DriveOnlineBotsAI()
             {
                 botAI->SetMaster(nullptr);
                 botAI->ResetStrategies();
+                sRandomPlayerbotMgr.ResetIdleTimers(guidLow);
             }
         }
 
@@ -591,6 +597,25 @@ void GuildBotMgr::UnmarkAsGuildBotAccount(uint32 accountId)
         PlayerbotsDatabase.Execute(
             "UPDATE playerbots_account_type SET account_type = 1 "
             "WHERE account_id = {} AND account_type = 3", accountId);
+    }
+}
+
+void GuildBotMgr::EvictBotsForAccount(uint32 accountId)
+{
+    std::vector<uint32> toEvict;
+    for (uint32 guidLow : _managedBots)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
+        Player* bot = ObjectAccessor::FindPlayer(guid);
+        if (bot && bot->GetSession()->GetAccountId() == accountId)
+            toEvict.push_back(guidLow);
+    }
+    for (uint32 guidLow : toEvict)
+    {
+        ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(guidLow);
+        _managedBots.erase(guidLow);
+        LOG_DEBUG("playerbots", "mod-guild-bots: bot guid={} evicted from managed set (account removed from guild).", guidLow);
+        sRandomPlayerbotMgr.LogoutPlayerBot(guid);
     }
 }
 

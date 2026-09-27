@@ -40,6 +40,9 @@ public:
     void MarkAsGuildBotAccount(uint32 accountId);
     // Restore a bot account to random type (1) when it leaves all real guilds.
     void UnmarkAsGuildBotAccount(uint32 accountId);
+    // Remove all managed bots belonging to this account and log them out so they
+    // rejoin the random bot pool on next login.
+    void EvictBotsForAccount(uint32 accountId);
     // On startup: retroactively mark all existing guild-bot accounts as type 3.
     void MarkExistingGuildBotAccounts();
 
