@@ -95,7 +95,7 @@ void GuildBotMgr::MasterSync()
 
         Group* group = bot->GetGroup();
 
-        if (!group || group->isLFGGroup())
+        if (!group)
         {
             if (botAI->GetMaster())
             {
@@ -105,6 +105,12 @@ void GuildBotMgr::MasterSync()
             }
             continue;
         }
+
+        // LFG groups are left to the LFG path: clearing master here would make
+        // PlayerbotAI::UpdateAIGroupMaster re-run FindNewMaster and re-send the
+        // "hello_follow" greeting on every sync tick.
+        if (group->isLFGGroup())
+            continue;
 
         // Scan group members using GetMemberSlots to cover offline/transitioning players.
         bool hasRealPlayer = false;
@@ -142,10 +148,16 @@ void GuildBotMgr::MasterSync()
         if (hasRealPlayer)
         {
             if (newMaster && botAI->GetMaster() != newMaster)
+            {
+                LOG_DEBUG("playerbots", "mod-guild-bots: MasterSync sets master of {} to {}.", bot->GetName(),
+                          newMaster->GetName());
                 botAI->SetMaster(newMaster);
+            }
         }
         else
         {
+            LOG_DEBUG("playerbots", "mod-guild-bots: MasterSync found no real player for {}, leaving group.",
+                      bot->GetName());
             botAI->LeaveOrDisbandGroup();
             botAI->SetMaster(nullptr);
             botAI->ResetStrategies();
